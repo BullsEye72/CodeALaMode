@@ -14,8 +14,7 @@ CROISSANT = "CROISSANT"
 CHOPPED_DOUGH = "CHOPPED_DOUGH"
 RAW_TART = "RAW_TART"
 TART = "TART"
-
-
+WINDOW = "WINDOW"
 
 
 def print_err(string):
@@ -28,11 +27,11 @@ def print_debug(string):
 
 # =======================
 class Chef:
-    def __init__(self, name, x, y, item):
+    def __init__(self, name, x, y, items):
         self.name = name
         self.x = int(x)
         self.y = int(y)
-        self.item = item.split("-")
+        self.item = items.split("-")
 
         self.last_dish_coords = "EMPTY"
 
@@ -46,10 +45,14 @@ class Chef:
         self.bake_timer = 0
         self.bake_timer_running = False
 
-    def update_info(self, x, y, item):
+        self.is_baking_tart = False
+        self.baked_tart_item = "EMPTY"
+        self.baking_tart_state = "EMPTY"
+
+    def update_info(self, x, y, items):
         self.x = int(x)
         self.y = int(y)
-        self.item = item.split("-")
+        self.item = items.split("-")
 
         if self.bake_timer_running:
             self.bake_timer += 2
@@ -79,7 +82,7 @@ class Chef:
                 return True
         return False
 
-    def chop_item(self, item):
+    def chop_item(self):
         return_action = "ERROR IN CHOP_ITEM"
 
         if self.chopping_state == "SEARCH_CHOPPED":
@@ -98,7 +101,7 @@ class Chef:
                     self.chopping_state = "DROP_DISH"
 
         if self.chopping_state == "SEARCH_BOARD":
-            return_action = "MOVE " + Kitchen.get_coords("C")
+            return_action = "MOVE " + Kitchen.get_coords(CHOPPING_BOARD)
 
             if self.is_around("C") != False:
                 self.chopping_state = "DROP_DISH"
@@ -112,20 +115,19 @@ class Chef:
 
         if self.chopping_state == "SEARCH_ITEM":
             if STRAWBERRIES not in self.item:
-                return_action =  "USE " + Kitchen.get_coords("S")
+                return_action =  "USE " + Kitchen.get_coords(STRAWBERRIES)
             else:
                 self.chopping_state = "CHOP_ITEM"
 
         if self.chopping_state == "CHOP_ITEM":
             if CHOPPED_STRAWBERRIES not in self.item:
-                return_action = "USE " + Kitchen.get_coords("C")
+                return_action = "USE " + Kitchen.get_coords(CHOPPING_BOARD)
             else:
                 self.chopping_state = "USE_DISH"
 
         if self.chopping_state == "USE_DISH":
             last_coords = self.last_dish_coords
             x, y = last_coords.split(" ")
-            print_debug(TableItem.get_item_at_coords(x, y))
             if DISH not in TableItem.get_item_at_coords(x, y):
                 self.chopping_state = "ERROR"
 
@@ -147,8 +149,9 @@ class Chef:
         print_err("Choppin State = " + self.chopping_state)
         return return_action
 
-    def bake_item(self, item):
+    def bake_item(self):
         return_action = "ERROR IN BAKE_ITEM"
+        print_debug("Baking Croissant")
 
         if self.baking_state == "SEARCH_BAKED":
             found_baked = False
@@ -166,7 +169,7 @@ class Chef:
                     self.baking_state = "DROP_DISH"
 
         if self.baking_state == "SEARCH_OVEN":
-            return_action = "MOVE " + Kitchen.get_coords("O")
+            return_action = "MOVE " + Kitchen.get_coords(OVEN)
 
             if self.is_around("O") != False:
                 self.baking_state = "DROP_DISH"
@@ -180,20 +183,19 @@ class Chef:
 
         if self.baking_state == "SEARCH_ITEM":
             if DOUGH not in self.item:
-                return_action = "USE " + Kitchen.get_coords(Kitchen.get_initial(DOUGH))
+                return_action = "USE " + Kitchen.get_coords(DOUGH)
             else:
                 self.baking_state = "BAKE_ITEM"
 
         if self.baking_state == "BAKE_ITEM":
             if CROISSANT not in self.item:
-                return_action = "USE " + Kitchen.get_coords(Kitchen.get_initial(OVEN))
+                return_action = "USE " + Kitchen.get_coords(OVEN)
             else:
                 self.baking_state = "USE_DISH"
 
         if self.baking_state == "USE_DISH":
             last_coords = self.last_dish_coords
             x, y = last_coords.split(" ")
-            print_debug(TableItem.get_item_at_coords(x, y))
             if DISH not in TableItem.get_item_at_coords(x, y):
                 self.baking_state = "ERROR"
 
@@ -211,6 +213,89 @@ class Chef:
         if self.baking_state == "FINISH":
             self.last_dish_coords = "EMPTY"
             self.is_baking = False
+
+        return return_action
+
+    def bake_tart_item(self):
+        return_action = "ERROR IN BAKE_tart_ITEM"
+        print_debug("Baking Tart")
+
+        if self.baking_tart_state == "SEARCH_BAKED":
+            found_baked = False
+            for it in TableItem.list:
+                if TART in it.item:
+                    found_baked = True
+                    return_action = "USE %d %d" % (it.x, it.y)
+                    if self.is_around_coords(it.x, it.y):
+                        return_action = "USE %d %d" % (it.x, it.y)
+                        self.baking_tart_state = "FINISH"
+            if self.is_baking_tart and not found_baked:
+                if self.is_around("O") == False:
+                    self.baking_tart_state = "SEARCH_OVEN"
+                else:
+                    self.baking_tart_state = "DROP_DISH"
+
+        if self.baking_tart_state == "SEARCH_OVEN":
+            return_action = "MOVE " + Kitchen.get_coords(OVEN)
+
+            if self.is_around("O") != False:
+                self.baking_tart_state = "DROP_DISH"
+
+        if self.baking_tart_state == "DROP_DISH":
+            free_table_coords = self.is_around("#", "O")
+            self.last_dish_coords = free_table_coords
+            return_action = "USE " + free_table_coords
+            if NONE in self.item:
+                self.baking_tart_state = "SEARCH_ITEM"
+
+        if self.baking_tart_state == "SEARCH_ITEM":
+            if DOUGH not in self.item:
+                print_debug("Has Item : " + str(TableItem.has_item(DOUGH)))
+                if TableItem.has_item(DOUGH):
+                    return_action = "USE " + TableItem.get_item_coords(DOUGH)
+                else:
+                    return_action = "USE " + Kitchen.get_coords(DOUGH)
+            else:
+                self.baking_tart_state = "CHOP_ITEM"
+
+        if self.baking_tart_state == "CHOP_ITEM":
+            if CHOPPED_DOUGH not in self.item:
+                return_action = "USE " + Kitchen.get_coords(CHOPPING_BOARD)
+            else:
+                self.baking_tart_state = "ADD_BERRY"
+
+        if self.baking_tart_state == "ADD_BERRY":
+            if RAW_TART not in self.item:
+                return_action = "USE " + Kitchen.get_coords(BLUEBERRIES)
+            else:
+                self.baking_tart_state = "BAKE_ITEM"
+
+        if self.baking_tart_state == "BAKE_ITEM":
+            if TART not in self.item:
+                return_action = "USE " + Kitchen.get_coords(OVEN)
+            else:
+                self.baking_tart_state = "USE_DISH"
+
+        if self.baking_tart_state == "USE_DISH":
+            last_coords = self.last_dish_coords
+            x, y = last_coords.split(" ")
+            if DISH not in TableItem.get_item_at_coords(x, y):
+                self.baking_tart_state = "ERROR"
+
+            if DISH not in self.item:
+                return_action = "USE " + last_coords
+            else:
+                return_action = "WAIT; Huh?"
+                self.baking_tart_state = "FINISH"
+
+        if self.baking_tart_state == "ERROR":
+            print_err("ERROR IN BAKING MACHINE")
+            return_action = "WAIT; Problem!"
+            self.baking_tart_state = "FINISH"
+
+        if self.baking_tart_state == "FINISH":
+            self.last_dish_coords = "EMPTY"
+            self.is_baking_tart = False
 
         return return_action
 
@@ -258,30 +343,36 @@ class Kitchen:
 
     @staticmethod
     def get_coords(target):
+        real_target = target
+        if len(target) > 1:
+            real_target = Kitchen.get_initial(target)
+
         for index, line in enumerate(Kitchen.map):
-            if target in line:
-                coords = "%d %d" % (line.index(target), index)
+            if real_target in line:
+                coords = "%d %d" % (line.index(real_target), index)
                 return coords
-        return "COORDS_NOT_FOUND"
+        return "COORDS_NOT_FOUND (%s / %s)" % (target, real_target)
 
     @staticmethod
-    def get_initial(item):
-        if item == DISH:
+    def get_initial(items):
+        if items == DISH:
             return "D"
-        if item == ICE_CREAM:
+        if items == ICE_CREAM:
             return "I"
-        if item == BLUEBERRIES:
+        if items == BLUEBERRIES:
             return "B"
-        if item == STRAWBERRIES:
+        if items == STRAWBERRIES:
             return "S"
-        if item == CHOPPING_BOARD:
+        if items == CHOPPING_BOARD:
             return "C"
-        if item == OVEN:
+        if items == OVEN:
             return "O"
-        if item == DOUGH:
+        if items == DOUGH:
             return "H"
-        if item == CHOPPED_STRAWBERRIES:
-            return None
+        if items == WINDOW:
+            return "W"
+
+        return "NO INITIAL FOUND"
 
 
 class Customer:
@@ -289,14 +380,17 @@ class Customer:
     full_list = []
     waiting_list = []
 
-    def __init__(self, item, award):
-        self.item = item.split("-")  # customer_item: the food the customer is waiting for
+    def __init__(self, items, award):
+        self.item = items.split("-")  # customer_item: the food the customer is waiting for
         self.award = award  # customer_award: the number of points awarded for delivering the food
         self.id = Customer.nb_customers
         Customer.nb_customers += 1
 
-        if CROISSANT in self.item or STRAWBERRIES in self.item:
+        if TART in self.item or CROISSANT in self.item or STRAWBERRIES in self.item:
             new_item = []
+            if TART in self.item:
+                self.item.remove(TART)
+                new_item.append(TART)
             if CROISSANT in self.item:
                 self.item.remove(CROISSANT)
                 new_item.append(CROISSANT)
@@ -306,9 +400,6 @@ class Customer:
             for it in self.item:
                 new_item.append(it)
             self.item = new_item
-
-
-
 
     @staticmethod
     def show_all_customers():
@@ -325,7 +416,7 @@ class Customer:
     @staticmethod
     def get_best_order_item():
         best_item = ''
-        award=0
+        award = 0
         for cus in Customer.waiting_list:
             if cus.award > award:
                 award = cus.award
@@ -336,19 +427,17 @@ class Customer:
 class TableItem:
     list = []
 
-    def __init__(self, x, y, item):
+    def __init__(self, x, y, items):
         self.x = int(x)
         self.y = int(y)
-        self.item = item.split("-")
+        self.item = items.split("-")
 
     @staticmethod
     def show_all_items():
-        for i, it in enumerate(TableItem.list):
-            print_err("%d - %s %s %s" % (i, it.x, it.y, it.item))
+        for index, it in enumerate(TableItem.list):
+            print_err("%d - %s %s %s" % (index, it.x, it.y, it.item))
 
     def item_is_ordered(self, customers):
-        coords = None
-
         for cus in customers:
             if cus.item[1] in self.item and cus.item[2] in self.item:
                 coords = "%d %d" % (self.x, self.y)
@@ -361,6 +450,20 @@ class TableItem:
                 return it.item
         return "Nothing"
 
+    @staticmethod
+    def has_item(item):
+        for it in TableItem.list:
+            # print_debug("Has Item Comp : %s / %s" % (item, it.item))
+            if item in it.item:
+                return True
+        return False
+
+    @staticmethod
+    def get_item_coords(item):
+        for it in TableItem.list:
+            if item == it.item:
+                return "%d %d" % (it.x, it.y)
+        return "NO ITEM FOUND (%s)" % item
 
 # ============== INIT ============================
 
@@ -416,7 +519,7 @@ while True:
     for i in range(num_customers):
         customer_item, customer_award = input().split()
         customer_award = int(customer_award)
-        newCustomer = Customer(customer_item,customer_award)
+        newCustomer = Customer(customer_item, customer_award)
         Customer.waiting_list.append(newCustomer)
 
     if show_waiting:
@@ -434,7 +537,7 @@ while True:
     if show_active_order:
         print_err("My Active Order: %s" % ("-".join(target_command)))
 
-    if not myChef.is_chopping and not myChef.is_baking:
+    if not myChef.is_chopping and not myChef.is_baking and not myChef.is_baking_tart:
         if NONE in myChef.item:
             for ti in TableItem.list:
                 if DISH in ti.item:
@@ -444,32 +547,40 @@ while True:
             can_steal = False
 
     if not can_steal:
-        if myChef.is_baking:
-            next_action = myChef.bake_item(myChef.baked_item)
+        if myChef.is_baking_tart:
+            next_action = myChef.bake_tart_item()
+        elif myChef.is_baking:
+            next_action = myChef.bake_item()
         elif myChef.is_chopping:
-            next_action = myChef.chop_item(myChef.chopped_item)
+            next_action = myChef.chop_item()
         elif NONE in myChef.item:
-            next_action = "USE " + Kitchen.get_coords("D")
+            next_action = "USE " + Kitchen.get_coords(DISH)
         else:
             for cus_item in target_command:
                 if cus_item not in myChef.item:
-                    if CROISSANT in cus_item and not myChef.is_baking:
+                    if TART in cus_item and not myChef.is_baking_tart:
+                        myChef.is_baking_tart = True
+                        myChef.baking_tart_state = "SEARCH_BAKED"
+                        myChef.baked_tart_item = cus_item
+                        next_action = myChef.bake_tart_item()
+                        break
+                    elif CROISSANT in cus_item and not myChef.is_baking:
                         myChef.is_baking = True
                         myChef.baking_state = "SEARCH_BAKED"
                         myChef.baked_item = cus_item
-                        next_action = myChef.bake_item(cus_item)
+                        next_action = myChef.bake_item()
                         break
                     elif "CHOPPED" in cus_item.split("_") and not myChef.is_chopping:
                         myChef.is_chopping = True
                         myChef.chopping_state = "SEARCH_CHOPPED"
                         myChef.chopped_item = cus_item
-                        next_action = myChef.chop_item(cus_item)
+                        next_action = myChef.chop_item()
                         break
                     else:
-                        next_action = "USE " + Kitchen.get_coords(Kitchen.get_initial(cus_item))
+                        next_action = "USE " + Kitchen.get_coords(cus_item)
                         break
             if next_action == "WAIT":
-                next_action = "USE " + Kitchen.get_coords("W")
+                next_action = "USE " + Kitchen.get_coords(WINDOW)
 
     if myChef.has_all_items(target_command):
         if not partnerChef.is_around("W") and partnerChef.y > 2 and not myChef.is_around("W"):
@@ -478,11 +589,7 @@ while True:
             elif partnerChef.x > 5:
                 next_action = "MOVE 6 5"
         else:
-            next_action = "USE " + Kitchen.get_coords("W")
-
-
-
+            next_action = "USE " + Kitchen.get_coords(WINDOW)
 
     # ========= ACTION ===========================
     print(next_action)
-
