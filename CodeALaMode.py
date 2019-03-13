@@ -30,337 +30,83 @@ def get_distance(a_pos, b_pos):
     xa, ya = list(map(int, a_pos.split(" ")))
     xb, yb = list(map(int, b_pos.split(" ")))
 
-    distance = math.sqrt(((xa-xb)**2) + ((ya-yb)**2))
+    distance = math.sqrt(((xa - xb) ** 2) + ((ya - yb) ** 2))
     return distance
 
+
 # =======================
+
+class Action:
+    @staticmethod
+    def use(target):
+        return "USE " + Kitchen.get_coords(target)
+
+    @staticmethod
+    def use_coords(p_x, p_y):
+        return "USE %d %d" % (int(p_x), int(p_y))
+
+
 class Chef:
-    def __init__(self, name, x, y, items):
+    def __init__(self, name, p_x, p_y, items):
         self.name = name
-        self.x = int(x)
-        self.y = int(y)
+        self.x = int(p_x)
+        self.y = int(p_y)
+        self.item = items.split("-")
+
+        # post-refactoring V
+
+        self.action_state = None
+
+        # pre-refactoring V
+
         self.str_coords = ""
         self.update_str_coords()
 
-        self.item = items.split("-")
-
-        self.last_dish_coords = "EMPTY"
-
-        self.is_chopping = False
-        self.chopped_item = "EMPTY"
-        self.chopping_state = "EMPTY"
-
-        self.is_baking = False
-        self.baked_item = "EMPTY"
-        self.baking_state = "EMPTY"
-        self.bake_timer = 0
-        self.bake_timer_running = False
-
-        self.is_baking_tart = False
-        self.baked_tart_item = "EMPTY"
-        self.baking_tart_state = "EMPTY"
-
         self.target_command = ""
 
-    def update_info(self, x, y, items):
-        self.x = int(x)
-        self.y = int(y)
+    def update_info(self, p_x, p_y, items):
+        self.x = int(p_x)
+        self.y = int(p_y)
         self.update_str_coords()
         self.item = items.split("-")
-
-        if self.bake_timer_running:
-            self.bake_timer += 2
-            if self.bake_timer > 20:
-                self.bake_timer_running = False
 
     def update_str_coords(self):
         self.str_coords = "%d %d" % (self.x, self.y)
 
-    def set_bake_timer(self):
-        self.bake_timer = 0
-        self.bake_timer_running = True
-
     def show_items(self):
         print_err(self.name + " : " + " & ".join(self.item))
 
-    def has_all_items(self, command):
+    def has_all_items(self):
         ready = True
-        for it in command:
+        for it in self.target_command:
             if it not in self.item:
                 ready = False
 
         return ready
 
-    def is_around_coords(self, x, y):
-        x = int(x)
-        y = int(y)
-        if x >= self.x-1 and x <= self.x+1:
-            if y >= self.y-1 and y <= self.y+1:
+    def is_around_coords(self, p_x, p_y):
+        p_x = int(p_x)
+        p_y = int(p_y)
+        if p_x >= self.x - 1 and p_x <= self.x + 1:
+            if p_y >= self.y - 1 and p_y <= self.y + 1:
                 return True
         return False
 
-    def chop_item(self):
-        return_action = "ERROR IN CHOP_ITEM"
-
-        if self.chopping_state == "SEARCH_CHOPPED":
-            found_chopped = False
-            for it in TableItem.list:
-                if CHOPPED_STRAWBERRIES in it.item:
-                    found_chopped = True
-                    return_action = "USE %d %d" % (it.x, it.y)
-                    if self.is_around_coords(it.x, it.y):
-                        return_action = "USE %d %d" % (it.x, it.y)
-                        self.chopping_state = "FINISH"
-            if self.is_chopping and not found_chopped:
-                if self.is_around("C") == False:
-                    self.chopping_state = "SEARCH_BOARD"
-                else:
-                    self.chopping_state = "DROP_DISH"
-
-        if self.chopping_state == "SEARCH_BOARD":
-            return_action = "MOVE " + Kitchen.get_coords(CHOPPING_BOARD)
-
-            if self.is_around("C") != False:
-                self.chopping_state = "DROP_DISH"
-
-        if self.chopping_state == "DROP_DISH":
-                free_table_coords = self.is_around("#", "C")
-                self.last_dish_coords = free_table_coords
-                return_action = "USE " + free_table_coords
-                if NONE in self.item:
-                    self.chopping_state = "SEARCH_ITEM"
-
-        if self.chopping_state == "SEARCH_ITEM":
-            if STRAWBERRIES not in self.item:
-                return_action =  "USE " + Kitchen.get_coords(STRAWBERRIES)
-            else:
-                self.chopping_state = "CHOP_ITEM"
-
-        if self.chopping_state == "CHOP_ITEM":
-            if CHOPPED_STRAWBERRIES not in self.item:
-                return_action = "USE " + Kitchen.get_coords(CHOPPING_BOARD)
-            else:
-                self.chopping_state = "USE_DISH"
-
-        if self.chopping_state == "USE_DISH":
-            last_coords = self.last_dish_coords
-            x, y = last_coords.split(" ")
-            if DISH not in TableItem.get_item_at_coords(x, y):
-                self.chopping_state = "ERROR"
-
-            if DISH not in self.item:
-                return_action = "USE " + last_coords
-            else:
-                return_action = "WAIT; Huh?"
-                self.chopping_state = "FINISH"
-
-        if self.chopping_state == "ERROR":
-            print_err("ERROR IN CHOPPING MACHINE")
-            return_action = "WAIT; Problem!"
-            self.chopping_state = "FINISH"
-
-        if self.chopping_state == "FINISH":
-            self.last_dish_coords = "EMPTY"
-            self.is_chopping = False
-
-        print_err("Choppin State = " + self.chopping_state)
-        return return_action
-
-    def bake_item(self):
-        return_action = "ERROR IN BAKE_ITEM"
-
-        if self.baking_state == "SEARCH_BAKED":
-            found_baked = False
-            for it in TableItem.list:
-                if CROISSANT in it.item:
-                    found_baked = True
-                    return_action = "USE %d %d" % (it.x, it.y)
-                    if self.is_around_coords(it.x, it.y):
-                        return_action = "USE %d %d" % (it.x, it.y)
-                        self.baking_state = "FINISH"
-            if self.is_baking and not found_baked:
-                if self.is_around("O") == False:
-                    self.baking_state = "SEARCH_OVEN"
-                else:
-                    self.baking_state = "DROP_DISH"
-
-        if self.baking_state == "SEARCH_OVEN":
-            return_action = "MOVE " + Kitchen.get_coords(OVEN)
-
-            if self.is_around("O") != False:
-                self.baking_state = "DROP_DISH"
-
-        if self.baking_state == "DROP_DISH":
-            free_table_coords = self.is_around("#", "O")
-            self.last_dish_coords = free_table_coords
-            return_action = "USE " + free_table_coords
-            if NONE in self.item:
-                self.baking_state = "SEARCH_ITEM"
-
-        if self.baking_state == "SEARCH_ITEM":
-            if DOUGH not in self.item:
-                return_action = "USE " + Kitchen.get_coords(DOUGH)
-            else:
-                self.baking_state = "BAKE_ITEM"
-
-        if self.baking_state == "BAKE_ITEM":
-            if CROISSANT not in self.item:
-                return_action = "USE " + Kitchen.get_coords(OVEN)
-            else:
-                self.baking_state = "USE_DISH"
-
-        if self.baking_state == "USE_DISH":
-            last_coords = self.last_dish_coords
-            x, y = last_coords.split(" ")
-
-            if DISH not in self.item:
-                if DISH not in TableItem.get_item_at_coords(x, y):
-                    if TableItem.has_item(DISH):
-                        return_action = "USE " + TableItem.get_item_coords(DISH)
-                    else:
-                        return_action = "USE " + Kitchen.get_coords(DISH)
-                    # self.baking_state = "ERROR"
-                else:
-                    return_action = "USE " + last_coords
-            else:
-                return_action = "WAIT; hmm.."
-                self.baking_state = "FINISH"
-
-        if self.baking_state == "ERROR":
-            print_err("ERROR IN BAKING MACHINE")
-            return_action = "WAIT; Problem!"
-            self.baking_state = "FINISH"
-
-        if self.baking_state == "FINISH":
-            self.last_dish_coords = "EMPTY"
-            self.is_baking = False
-
-        return return_action
-
-    def bake_tart_item(self):
-        return_action = "ERROR IN BAKE_tart_ITEM"
-        # print_debug("Baking Tart")
-        # print_debug("Bake Tart : " + self.baking_tart_state)
-
-        steps = ['SEARCH_OVEN', 'DROP_DISH', 'SEARCH_ITEM', 'CHOP_ITEM', 'ADD_BERRY', 'BAKE_ITEM', 'USE_DISH']
-        step = 99
-        if self.baking_tart_state in steps:
-            step = steps.index(self.baking_tart_state)
-        # print_debug("Step : " + str(step))
-
-        if TableItem.has_item(RAW_TART) and NONE in self.item and step < 3:
-            return_action = "USE " + TableItem.get_item_coords(RAW_TART)
-            return return_action
-        if RAW_TART in self.item:
-            self.baking_tart_state = "BAKE_ITEM"
-
-        if self.baking_tart_state == "SEARCH_BAKED":
-            found_baked = False
-            for it in TableItem.list:
-                if TART in it.item:
-                    found_baked = True
-                    return_action = "USE %d %d" % (it.x, it.y)
-                    if self.is_around_coords(it.x, it.y):
-                        return_action = "USE %d %d" % (it.x, it.y)
-                        self.baking_tart_state = "FINISH"
-            if self.is_baking_tart and not found_baked:
-                if self.is_around("O") == False:
-                    self.baking_tart_state = "SEARCH_OVEN"
-                else:
-                    self.baking_tart_state = "DROP_DISH"
-
-        if self.baking_tart_state == "SEARCH_OVEN":
-            return_action = "MOVE " + Kitchen.get_coords(OVEN)
-
-            if self.is_around("O") != False:
-                self.baking_tart_state = "DROP_DISH"
-
-        if self.baking_tart_state == "DROP_DISH":
-            free_table_coords = self.is_around("#", "O")
-            self.last_dish_coords = free_table_coords
-            return_action = "USE " + free_table_coords
-            if NONE in self.item:
-                self.baking_tart_state = "SEARCH_ITEM"
-
-        if self.baking_tart_state == "SEARCH_ITEM":
-            if DOUGH not in self.item:
-                if TableItem.has_item(DOUGH):
-                    return_action = "USE " + TableItem.get_item_coords(DOUGH)
-                else:
-                    return_action = "USE " + Kitchen.get_coords(DOUGH)
-            else:
-                self.baking_tart_state = "CHOP_ITEM"
-
-        if self.baking_tart_state == "CHOP_ITEM":
-            if CHOPPED_DOUGH not in self.item:
-                return_action = "USE " + Kitchen.get_coords(CHOPPING_BOARD)
-            else:
-                self.baking_tart_state = "ADD_BERRY"
-
-        if self.baking_tart_state == "ADD_BERRY":
-            if RAW_TART not in self.item:
-                return_action = "USE " + Kitchen.get_coords(BLUEBERRIES)
-            else:
-                self.baking_tart_state = "BAKE_ITEM"
-
-        if self.baking_tart_state == "BAKE_ITEM":
-            if TART not in self.item:
-                print_debug("timer : " + str(oven_timer))
-
-                if oven_timer < 8 and self.is_around(OVEN):
-                    oven_x, oven_y = list(map(int, Kitchen.get_coords(OVEN).split(" ")))
-                    if partnerChef.y > self.y:
-                        return_action = "MOVE %d %d" % (self.x, oven_y + 1)
-                    else:
-                        return_action = "MOVE %d %d" % (self.x, oven_y - 1)
-
-                else:
-                    return_action = "USE " + Kitchen.get_coords(OVEN)
-            else:
-                self.baking_tart_state = "USE_DISH"
-
-        if self.baking_tart_state == "USE_DISH":
-            last_coords = self.last_dish_coords
-            x, y = last_coords.split(" ")
-
-            if DISH not in self.item:
-                return_action = self.use_dish()
-                ''' if DISH not in TableItem.get_item_at_coords(x, y):
-                     if TableItem.has_item(DISH):
-                        return_action = "USE " + TableItem.get_item_coords(DISH)
-                     else:
-                        return_action = "USE " + Kitchen.get_coords(DISH)
-                     self.baking_state = "ERROR"
-                else:
-                    return_action = "USE " + last_coords'''
-            else:
-                return_action = "WAIT; hmm.."
-                self.baking_tart_state = "FINISH"
-
-        if self.baking_tart_state == "ERROR":
-            print_err("ERROR IN BAKING MACHINE")
-            return_action = "WAIT; Problem!"
-            self.baking_tart_state = "FINISH"
-
-        if self.baking_tart_state == "FINISH":
-            self.last_dish_coords = "EMPTY"
-            self.is_baking_tart = False
-
-        # print_debug("Bake Tart : " + self.baking_tart_state)
-        return return_action
-
-    def is_around(self, target, direction=None):
+    def is_around(self, target, direction=None, empty=None):
 
         search_range_x = range(-1, 2)
         search_range_y = range(-1, 2)
 
+        if len(target) > 1:
+            target = Kitchen.get_initial(target)
+
         if direction is not None:
-            x, y = Kitchen.get_coords(direction).split(" ")
-            x = int(x)
-            y = int(y)
-            if x <= self.x:
+            p_x, p_y = Kitchen.get_coords(direction).split(" ")
+            p_x = int(p_x)
+            p_y = int(p_y)
+            if p_x <= self.x:
                 search_range_x = range(1, -2, -1)
-            if y >= self.y:
+            if p_y >= self.y:
                 search_range_y = range(1, -2, -1)
 
         for iy in search_range_y:
@@ -368,9 +114,13 @@ class Chef:
                 look_x = self.x + ix
                 look_y = self.y + iy
                 if Kitchen.map[look_y][look_x] == target:
-                    return "%d %d" % (look_x, look_y)
-
-        return False
+                    print_debug("test1")
+                    if empty is None:
+                        return [look_x, look_y]
+                    else:
+                        if TableItem.get_item_at_coords(look_x, look_y) is None:
+                            return [look_x, look_y]
+        return None
 
     def use_dish(self):
         possiblity1 = "99 99"
@@ -383,6 +133,13 @@ class Chef:
         else:
             return "USE " + possiblity2
 
+    def drop_dish(self):
+        search_table = self.is_around("#", empty=True)
+        if search_table is not None:
+            p_x, p_y = list(map(int, search_table))
+            return Action.use_coords(p_x, p_y)
+        return None
+
 
 class Kitchen:
     map = []
@@ -394,7 +151,7 @@ class Kitchen:
     @staticmethod
     def show_map():
         for line in Kitchen.map:
-            print_err("-".join(str(x) for x in line))
+            print_err("-".join(str(p_x) for p_x in line))
 
     @staticmethod
     def get_coords(target):
@@ -409,7 +166,7 @@ class Kitchen:
         return "COORDS_NOT_FOUND (%s / %s)" % (target, real_target)
 
     @staticmethod
-    def get_initial(item):
+    def get_initial(p_item):
         values = {
             DISH: "D",
             ICE_CREAM: "I",
@@ -421,8 +178,8 @@ class Kitchen:
             WINDOW: "W"
         }
 
-        if item in values:
-            return values[item]
+        if p_item in values:
+            return values[p_item]
         else:
             return "NO INITIAL FOUND"
 
@@ -438,7 +195,7 @@ class Customer:
         self.id = Customer.nb_customers
         Customer.nb_customers += 1
 
-        if TART in self.item or CROISSANT in self.item or STRAWBERRIES in self.item:
+        if TART in self.item or CROISSANT in self.item or CHOPPED_STRAWBERRIES in self.item:
             new_item = []
             if TART in self.item:
                 self.item.remove(TART)
@@ -446,9 +203,9 @@ class Customer:
             if CROISSANT in self.item:
                 self.item.remove(CROISSANT)
                 new_item.append(CROISSANT)
-            if STRAWBERRIES in self.item:
-                self.item.remove(STRAWBERRIES)
-                new_item.append(STRAWBERRIES)
+            if CHOPPED_STRAWBERRIES in self.item:
+                self.item.remove(CHOPPED_STRAWBERRIES)
+                new_item.append(CHOPPED_STRAWBERRIES)
             for it in self.item:
                 new_item.append(it)
             self.item = new_item
@@ -467,7 +224,7 @@ class Customer:
 
     @staticmethod
     def get_best_order_item():
-        best_item = ''
+        best_item = None
         award = 0
         for cus in Customer.waiting_list:
             if cus.award > award:
@@ -479,9 +236,9 @@ class Customer:
 class TableItem:
     list = []
 
-    def __init__(self, x, y, items):
-        self.x = int(x)
-        self.y = int(y)
+    def __init__(self, p_x, p_y, items):
+        self.x = int(p_x)
+        self.y = int(p_y)
         self.item = items.split("-")
 
     @staticmethod
@@ -496,43 +253,59 @@ class TableItem:
                 return coords
 
     @staticmethod
-    def get_item_at_coords(x, y):
+    def get_item_at_coords(p_x, p_y):
         for it in TableItem.list:
-            if it.x == int(x) and it.y == int(y):
+            if it.x == int(p_x) and it.y == int(p_y):
                 return it.item
-        return "Nothing"
+        return None
 
     @staticmethod
-    def has_item(item):
+    def has_item(p_item):
         for it in TableItem.list:
             # print_debug("Has Item Comp : %s / %s" % (item, it.item))
-            if item in it.item:
+            if p_item in it.item and len(it.item) == 1:
                 return True
         return False
 
     @staticmethod
-    def get_item_coords(item):
+    def get_item_coords(p_item):
         for it in TableItem.list:
-            if item in it.item:
-                return "%d %d" % (it.x, it.y)
-        return "NO ITEM FOUND (%s)" % item
+            if p_item in it.item:
+                return [it.x, it.y]
+        return "NO ITEM FOUND (%s)" % p_item
 
     @staticmethod
     def get_all_dishes():
-        list = []
         for it in TableItem.list:
             if DISH in it.item:
                 print_debug("GetAll : %s : comp=%s" % (" & ".join(it.item), str(TableItem.dish_is_compatible(it))))
 
     @staticmethod
-    def dish_is_compatible(dish):
+    def dish_is_compatible(dish, except_item=None):
         compatible = True
 
-        for it in dish.item:
-            if it not in myChef.target_command:
+        if DISH not in dish.item:
+            compatible = False
+        else:
+            if except_item is not None and except_item in dish.item:
                 compatible = False
+            else:
+                for it in dish.item:
+                    if it not in myChef.target_command:
+                        compatible = False
 
         return compatible
+
+    @staticmethod
+    def find_most_compatible_dish(except_item=None):
+        nb_items = 0
+        return_dish = None
+        for it in TableItem.list:
+            if TableItem.dish_is_compatible(it, except_item):
+                if len(it.item) > nb_items:
+                    nb_items = len(it.item)
+                    return_dish = it
+        return return_dish
 
 
 # ============== INIT ============================
@@ -540,7 +313,7 @@ class TableItem:
 show_waiting = False
 show_table_items = False
 show_active_order = True
-
+show_oven = False
 
 num_all_customers = int(input())
 for i in range(num_all_customers):
@@ -583,6 +356,7 @@ while True:
     # oven_contents: ignore until wood 1 league
     oven_contents, oven_timer = input().split()
     oven_timer = int(oven_timer)
+    oven_contents = oven_contents.split("-")
 
     num_customers = int(input())  # the number of customers currently waiting for food
     Customer.waiting_list = []
@@ -592,76 +366,172 @@ while True:
         newCustomer = Customer(customer_item, customer_award)
         Customer.waiting_list.append(newCustomer)
 
+    # ====== INFO MESSAGES ==============================
+
     if show_waiting:
         print_err("Waiting:")
         Customer.show_waiting_customers()
 
-    next_action = "WAIT"
+    if show_oven:
+        print_err("Oven (%d):" % oven_timer)
+        print_err(oven_contents)
+
+    if show_table_items:
+        TableItem.get_all_dishes()
+
+    myChef.show_items()
 
     # ====== LOGIC ==============================
 
-    myChef.show_items()
-    # target_command = Customer.waiting_list[2].item
-    myChef.target_command = Customer.get_best_order_item()
+    next_action = "WAIT"
 
-    TableItem.get_all_dishes()
+    print_debug("active order =")
+
+    myChef.target_command = ''
+    print_debug(myChef.target_command)
+
+    for ord in Customer.waiting_list:
+        test_comp = TableItem.find_most_compatible_dish()
+        if test_comp is '':
+            myChef.target_command = ''
+
+    print_debug(myChef.target_command)
+    myChef.target_command = Customer.get_best_order_item()
+    print_debug(myChef.target_command)
+    print_debug("====")
+    # myChef.target_command = Customer.get_best_order_item()
+
+
 
     if show_active_order:
         print_err("My Active Order: %s" % ("-".join(myChef.target_command)))
 
-    if not myChef.is_chopping and not myChef.is_baking and not myChef.is_baking_tart:
-        if NONE in myChef.item:
-            for ti in TableItem.list:
-                if DISH in ti.item:
-                    can_steal = True
-                    next_action = "USE %d %d" % (ti.x, ti.y)
-        else:
-            can_steal = False
+    if not myChef.has_all_items():
 
-    if not can_steal:
-        if myChef.is_baking_tart:
-            next_action = myChef.bake_tart_item()
-        elif myChef.is_baking:
-            next_action = myChef.bake_item()
-        elif myChef.is_chopping:
-            next_action = myChef.chop_item()
-        elif NONE in myChef.item:
-            next_action = "USE " + Kitchen.get_coords(DISH)
+        comp_dish = TableItem.find_most_compatible_dish()
+        can_drop = myChef.drop_dish()
+        print_debug("My Dish comp? %s" % str(TableItem.dish_is_compatible(myChef)))
+
+        if myChef.action_state is None:
+            print_err("Action : NONE")
+
+            if NONE in myChef.item:
+                print_debug("Part None")
+
+                if comp_dish is not None:
+                    next_action = Action.use_coords(comp_dish.x, comp_dish.y)
+                else:
+                    next_action = Action.use(DISH)
+
+            elif not TableItem.dish_is_compatible(myChef) and can_drop:
+                print_err("Action : Not compatible! Dropping dish...")
+                next_action = can_drop
+
+            elif DISH in myChef.item and comp_dish is not None and len(comp_dish.item) > len(myChef.item):
+                print_debug("Part Compatible dish")
+
+                print_debug("comp len : %d" % len(comp_dish.item))
+                print_debug("chef len : %d" % len(myChef.item))
+                if can_drop is not None:
+                    next_action = can_drop
+            else:
+                print_debug("Part Other")
+                processed_foods = [TART, CROISSANT, CHOPPED_STRAWBERRIES]
+
+                for order_part in myChef.target_command:
+                    # print_debug("Order : " + order_part)
+
+                    if order_part not in myChef.item:
+
+                        if order_part not in processed_foods:
+                            print_debug("%s : Standard food" % order_part)
+                            next_action = Action.use(order_part)
+                        else:
+                            print_debug("%s : Processed" % order_part)
+                            if TableItem.has_item(order_part):
+                                x, y = list(map(int, TableItem.get_item_coords(order_part)))
+                                if DISH in TableItem.get_item_at_coords(x, y):
+                                    if can_drop is not None:
+                                        next_action = can_drop
+                                else:
+                                    next_action = Action.use_coords(x, y)
+                            else:
+                                # ============ PROCESS =========================
+                                myChef.action_state = "process_" + order_part
+                                # ==============================================
         else:
-            for cus_item in myChef.target_command:
-                if cus_item not in myChef.item:
-                    if TART in cus_item and not myChef.is_baking_tart:
-                        myChef.is_baking_tart = True
-                        myChef.baking_tart_state = "SEARCH_BAKED"
-                        myChef.baked_tart_item = cus_item
-                        next_action = myChef.bake_tart_item()
-                        break
-                    elif CROISSANT in cus_item and not myChef.is_baking:
-                        myChef.is_baking = True
-                        myChef.baking_state = "SEARCH_BAKED"
-                        myChef.baked_item = cus_item
-                        next_action = myChef.bake_item()
-                        break
-                    elif "CHOPPED" in cus_item.split("_") and not myChef.is_chopping:
-                        myChef.is_chopping = True
-                        myChef.chopping_state = "SEARCH_CHOPPED"
-                        myChef.chopped_item = cus_item
-                        next_action = myChef.chop_item()
-                        break
+            print_err("Action : %s!" % myChef.action_state)
+
+            if myChef.action_state == "process_" + TART:
+                # ================ PROCESSING TART ==================
+                process_comp_dish = TableItem.find_most_compatible_dish(TART)
+
+                if DISH in myChef.item and TART not in myChef.item and can_drop is not None:
+                    next_action = can_drop
+                elif DOUGH in myChef.item:
+                    next_action = Action.use(CHOPPING_BOARD)
+                elif CHOPPED_DOUGH in myChef.item:
+                    next_action = Action.use(BLUEBERRIES)
+                elif RAW_TART in myChef.item or RAW_TART in oven_contents or TART in oven_contents:
+                    next_action = Action.use(OVEN)
+                elif TART in myChef.item:
+                    if process_comp_dish is not None:
+                        next_action = Action.use_coords(process_comp_dish.x, process_comp_dish.y)
+                        if myChef.is_around_coords(process_comp_dish.x, process_comp_dish.y):
+                            myChef.action_state = None
                     else:
-                        next_action = "USE " + Kitchen.get_coords(cus_item)
-                        break
-            if next_action == "WAIT":
-                next_action = "USE " + Kitchen.get_coords(WINDOW)
+                        next_action = Action.use(DISH)
+                        if myChef.is_around(DISH) != None:
+                            myChef.action_state = None
+                else:
+                    next_action = Action.use(DOUGH)
 
-    if myChef.has_all_items(myChef.target_command):
-        if not partnerChef.is_around("W") and partnerChef.y > 2 and not myChef.is_around("W"):
-            if partnerChef.x < 5:
-                next_action = "MOVE 4 5"
-            elif partnerChef.x > 5:
-                next_action = "MOVE 6 5"
-        else:
-            next_action = "USE " + Kitchen.get_coords(WINDOW)
+            elif myChef.action_state == "process_" + CROISSANT:
+                # ================ PROCESSING CROISSANT ==================
+                process_comp_dish = TableItem.find_most_compatible_dish(CROISSANT)
+
+                if DISH in myChef.item and CROISSANT not in myChef.item and can_drop is not None:
+                    next_action = can_drop
+                elif DOUGH in myChef.item or DOUGH in oven_contents or CROISSANT in oven_contents:
+                    next_action = Action.use(OVEN)
+                elif CROISSANT in myChef.item:
+                    if process_comp_dish is not None:
+                        next_action = Action.use_coords(process_comp_dish.x, process_comp_dish.y)
+                        if myChef.is_around_coords(process_comp_dish.x, process_comp_dish.y):
+                            myChef.action_state = None
+                    else:
+                        next_action = Action.use(DISH)
+                        print_debug("is around " + str(myChef.is_around(DISH)))
+                        if myChef.is_around(DISH) != None:
+                            myChef.action_state = None
+                else:
+                    next_action = Action.use(DOUGH)
+
+            elif myChef.action_state == "process_" + CHOPPED_STRAWBERRIES:
+                # ============ PROCESSING CHOPPED STRAWBERRIES ===============
+                process_comp_dish = TableItem.find_most_compatible_dish(CHOPPED_STRAWBERRIES)
+
+                if DISH in myChef.item and CHOPPED_STRAWBERRIES not in myChef.item and can_drop is not None:
+                    next_action = can_drop
+                elif STRAWBERRIES in myChef.item:
+                    next_action = Action.use(CHOPPING_BOARD)
+                elif CHOPPED_STRAWBERRIES in myChef.item:
+                    if process_comp_dish is not None:
+                        next_action = Action.use_coords(process_comp_dish.x, process_comp_dish.y)
+                        if myChef.is_around_coords(process_comp_dish.x, process_comp_dish.y):
+                            myChef.action_state = None
+                    else:
+                        next_action = Action.use(DISH)
+                        if myChef.is_around(DISH) != None:
+                            myChef.action_state = None
+                else:
+                    next_action = Action.use(STRAWBERRIES)
+
+            else:
+                next_action = "ERROR IN PROCESSING CHOICE"
+
+    else:
+        next_action = Action.use(WINDOW)
 
     # ========= ACTION ===========================
     print(next_action)
