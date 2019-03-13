@@ -22,8 +22,16 @@ def print_err(string):
 
 
 def print_debug(string):
-    print("DEBUG: %s" % string, file=sys.stderr)
+    if True:
+        print("DEBUG: %s" % string, file=sys.stderr)
 
+
+def get_distance(a_pos, b_pos):
+    xa, ya = list(map(int, a_pos.split(" ")))
+    xb, yb = list(map(int, b_pos.split(" ")))
+
+    distance = math.sqrt(((xa-xb)**2) + ((ya-yb)**2))
+    return distance
 
 # =======================
 class Chef:
@@ -31,6 +39,9 @@ class Chef:
         self.name = name
         self.x = int(x)
         self.y = int(y)
+        self.str_coords = ""
+        self.update_str_coords()
+
         self.item = items.split("-")
 
         self.last_dish_coords = "EMPTY"
@@ -49,15 +60,21 @@ class Chef:
         self.baked_tart_item = "EMPTY"
         self.baking_tart_state = "EMPTY"
 
+        self.target_command = ""
+
     def update_info(self, x, y, items):
         self.x = int(x)
         self.y = int(y)
+        self.update_str_coords()
         self.item = items.split("-")
 
         if self.bake_timer_running:
             self.bake_timer += 2
             if self.bake_timer > 20:
                 self.bake_timer_running = False
+
+    def update_str_coords(self):
+        self.str_coords = "%d %d" % (self.x, self.y)
 
     def set_bake_timer(self):
         self.bake_timer = 0
@@ -151,7 +168,6 @@ class Chef:
 
     def bake_item(self):
         return_action = "ERROR IN BAKE_ITEM"
-        print_debug("Baking Croissant")
 
         if self.baking_state == "SEARCH_BAKED":
             found_baked = False
@@ -196,13 +212,18 @@ class Chef:
         if self.baking_state == "USE_DISH":
             last_coords = self.last_dish_coords
             x, y = last_coords.split(" ")
-            if DISH not in TableItem.get_item_at_coords(x, y):
-                self.baking_state = "ERROR"
 
             if DISH not in self.item:
-                return_action = "USE " + last_coords
+                if DISH not in TableItem.get_item_at_coords(x, y):
+                    if TableItem.has_item(DISH):
+                        return_action = "USE " + TableItem.get_item_coords(DISH)
+                    else:
+                        return_action = "USE " + Kitchen.get_coords(DISH)
+                    # self.baking_state = "ERROR"
+                else:
+                    return_action = "USE " + last_coords
             else:
-                return_action = "WAIT; Huh?"
+                return_action = "WAIT; hmm.."
                 self.baking_state = "FINISH"
 
         if self.baking_state == "ERROR":
@@ -218,7 +239,20 @@ class Chef:
 
     def bake_tart_item(self):
         return_action = "ERROR IN BAKE_tart_ITEM"
-        print_debug("Baking Tart")
+        # print_debug("Baking Tart")
+        # print_debug("Bake Tart : " + self.baking_tart_state)
+
+        steps = ['SEARCH_OVEN', 'DROP_DISH', 'SEARCH_ITEM', 'CHOP_ITEM', 'ADD_BERRY', 'BAKE_ITEM', 'USE_DISH']
+        step = 99
+        if self.baking_tart_state in steps:
+            step = steps.index(self.baking_tart_state)
+        # print_debug("Step : " + str(step))
+
+        if TableItem.has_item(RAW_TART) and NONE in self.item and step < 3:
+            return_action = "USE " + TableItem.get_item_coords(RAW_TART)
+            return return_action
+        if RAW_TART in self.item:
+            self.baking_tart_state = "BAKE_ITEM"
 
         if self.baking_tart_state == "SEARCH_BAKED":
             found_baked = False
@@ -250,7 +284,6 @@ class Chef:
 
         if self.baking_tart_state == "SEARCH_ITEM":
             if DOUGH not in self.item:
-                print_debug("Has Item : " + str(TableItem.has_item(DOUGH)))
                 if TableItem.has_item(DOUGH):
                     return_action = "USE " + TableItem.get_item_coords(DOUGH)
                 else:
@@ -272,20 +305,36 @@ class Chef:
 
         if self.baking_tart_state == "BAKE_ITEM":
             if TART not in self.item:
-                return_action = "USE " + Kitchen.get_coords(OVEN)
+                print_debug("timer : " + str(oven_timer))
+
+                if oven_timer < 8 and self.is_around(OVEN):
+                    oven_x, oven_y = list(map(int, Kitchen.get_coords(OVEN).split(" ")))
+                    if partnerChef.y > self.y:
+                        return_action = "MOVE %d %d" % (self.x, oven_y + 1)
+                    else:
+                        return_action = "MOVE %d %d" % (self.x, oven_y - 1)
+
+                else:
+                    return_action = "USE " + Kitchen.get_coords(OVEN)
             else:
                 self.baking_tart_state = "USE_DISH"
 
         if self.baking_tart_state == "USE_DISH":
             last_coords = self.last_dish_coords
             x, y = last_coords.split(" ")
-            if DISH not in TableItem.get_item_at_coords(x, y):
-                self.baking_tart_state = "ERROR"
 
             if DISH not in self.item:
-                return_action = "USE " + last_coords
+                return_action = self.use_dish()
+                ''' if DISH not in TableItem.get_item_at_coords(x, y):
+                     if TableItem.has_item(DISH):
+                        return_action = "USE " + TableItem.get_item_coords(DISH)
+                     else:
+                        return_action = "USE " + Kitchen.get_coords(DISH)
+                     self.baking_state = "ERROR"
+                else:
+                    return_action = "USE " + last_coords'''
             else:
-                return_action = "WAIT; Huh?"
+                return_action = "WAIT; hmm.."
                 self.baking_tart_state = "FINISH"
 
         if self.baking_tart_state == "ERROR":
@@ -297,6 +346,7 @@ class Chef:
             self.last_dish_coords = "EMPTY"
             self.is_baking_tart = False
 
+        # print_debug("Bake Tart : " + self.baking_tart_state)
         return return_action
 
     def is_around(self, target, direction=None):
@@ -322,14 +372,19 @@ class Chef:
 
         return False
 
+    def use_dish(self):
+        possiblity1 = "99 99"
+        if TableItem.has_item(DISH):
+            possiblity1 = TableItem.get_item_coords(DISH)
+        possiblity2 = Kitchen.get_coords(DISH)
+
+        if get_distance(self.str_coords, possiblity1) < get_distance(self.str_coords, possiblity2):
+            return "USE " + possiblity1
+        else:
+            return "USE " + possiblity2
+
 
 class Kitchen:
-    # .: case de sol
-    # D: le lave-vaisselle
-    # W: la fenêtre de clients
-    # B: la corbeille de myrtilles
-    # I: la corbeille de crème glacée
-
     map = []
 
     @staticmethod
@@ -354,25 +409,22 @@ class Kitchen:
         return "COORDS_NOT_FOUND (%s / %s)" % (target, real_target)
 
     @staticmethod
-    def get_initial(items):
-        if items == DISH:
-            return "D"
-        if items == ICE_CREAM:
-            return "I"
-        if items == BLUEBERRIES:
-            return "B"
-        if items == STRAWBERRIES:
-            return "S"
-        if items == CHOPPING_BOARD:
-            return "C"
-        if items == OVEN:
-            return "O"
-        if items == DOUGH:
-            return "H"
-        if items == WINDOW:
-            return "W"
+    def get_initial(item):
+        values = {
+            DISH: "D",
+            ICE_CREAM: "I",
+            BLUEBERRIES: "B",
+            STRAWBERRIES: "S",
+            CHOPPING_BOARD: "C",
+            OVEN: "O",
+            DOUGH: "H",
+            WINDOW: "W"
+        }
 
-        return "NO INITIAL FOUND"
+        if item in values:
+            return values[item]
+        else:
+            return "NO INITIAL FOUND"
 
 
 class Customer:
@@ -461,9 +513,27 @@ class TableItem:
     @staticmethod
     def get_item_coords(item):
         for it in TableItem.list:
-            if item == it.item:
+            if item in it.item:
                 return "%d %d" % (it.x, it.y)
         return "NO ITEM FOUND (%s)" % item
+
+    @staticmethod
+    def get_all_dishes():
+        list = []
+        for it in TableItem.list:
+            if DISH in it.item:
+                print_debug("GetAll : %s : comp=%s" % (" & ".join(it.item), str(TableItem.dish_is_compatible(it))))
+
+    @staticmethod
+    def dish_is_compatible(dish):
+        compatible = True
+
+        for it in dish.item:
+            if it not in myChef.target_command:
+                compatible = False
+
+        return compatible
+
 
 # ============== INIT ============================
 
@@ -532,10 +602,12 @@ while True:
 
     myChef.show_items()
     # target_command = Customer.waiting_list[2].item
-    target_command = Customer.get_best_order_item()
+    myChef.target_command = Customer.get_best_order_item()
+
+    TableItem.get_all_dishes()
 
     if show_active_order:
-        print_err("My Active Order: %s" % ("-".join(target_command)))
+        print_err("My Active Order: %s" % ("-".join(myChef.target_command)))
 
     if not myChef.is_chopping and not myChef.is_baking and not myChef.is_baking_tart:
         if NONE in myChef.item:
@@ -556,7 +628,7 @@ while True:
         elif NONE in myChef.item:
             next_action = "USE " + Kitchen.get_coords(DISH)
         else:
-            for cus_item in target_command:
+            for cus_item in myChef.target_command:
                 if cus_item not in myChef.item:
                     if TART in cus_item and not myChef.is_baking_tart:
                         myChef.is_baking_tart = True
@@ -582,7 +654,7 @@ while True:
             if next_action == "WAIT":
                 next_action = "USE " + Kitchen.get_coords(WINDOW)
 
-    if myChef.has_all_items(target_command):
+    if myChef.has_all_items(myChef.target_command):
         if not partnerChef.is_around("W") and partnerChef.y > 2 and not myChef.is_around("W"):
             if partnerChef.x < 5:
                 next_action = "MOVE 4 5"
