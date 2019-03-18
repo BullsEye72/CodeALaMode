@@ -16,6 +16,28 @@ RAW_TART = "RAW_TART"
 TART = "TART"
 WINDOW = "WINDOW"
 
+text_counter = 0
+lyrics = [
+    '♫ Never gonna',
+    'give you up',
+    'let you down',
+    'run around',
+    'and desert you',
+    '♫ Never gonna',
+    'make you cry',
+    'say goodbye',
+    'tell a lie',
+    'and hurt you',
+    '♫ ♪ ♫ ♪'
+]
+
+insults = [
+    'My gran could do better', 'And she\'s dead!', '♪ ☺',
+    'What are you?', 'An idiot sandwich?', '♪ ☺',
+    'I wish you\'d jump', 'in the oven', 'That would make my life', 'A lot easier!', '♪ ☺',
+    'Congratulations..', 'on the worst dish', 'in this competition', 'so far!', '♪ ☺'
+]
+
 
 def print_err(string):
     print(string, file=sys.stderr)
@@ -41,11 +63,36 @@ def get_distance(a_pos, b_pos):
 
 class Action:
     @staticmethod
+    def follow_partner(coords):
+        tx, ty = list(map(int, coords.split(" ")))
+        print_debug("Test1 %d %d %d" % (myChef.x, partnerChef.x, tx))
+        if myChef.x <= partnerChef.x <= tx:
+            if myChef.y <= partnerChef.y <= ty:
+                return "MOVE " + partnerChef.str_coords
+
+        if myChef.x >= partnerChef.x >= tx:
+            if myChef.y >= partnerChef.y >= ty:
+                return "MOVE " + partnerChef.str_coords
+        return None
+
+    @staticmethod
     def use(target):
+        follow_partner = False
+        if follow_partner:
+            follow_command = Action.follow_partner(Kitchen.get_coords(target))
+            if follow_command is not None:
+                return follow_command
+
         return "USE " + Kitchen.get_coords(target)
 
     @staticmethod
     def use_coords(p_x, p_y):
+        follow_partner = False
+        if follow_partner:
+            follow_command = Action.follow_partner("%d %d" % (p_x, p_y))
+            if follow_command is not None:
+                return follow_command
+
         return "USE %d %d" % (int(p_x), int(p_y))
 
     @staticmethod
@@ -59,18 +106,12 @@ class Chef:
         self.x = int(p_x)
         self.y = int(p_y)
         self.item = items.split("-")
-
-        # post-refactoring V
-
         self.action_state = None
         self.waiting_bake = False
-
-        # pre-refactoring V
-
         self.str_coords = ""
         self.update_str_coords()
-
         self.target_command = ""
+        self.repeated_cmds = 0
 
     def update_info(self, p_x, p_y, items):
         self.x = int(p_x)
@@ -131,11 +172,12 @@ class Chef:
 
     def bake_it(self, ingr, result):
         self.waiting_bake = True
-        if (ingr in oven_contents or (result in oven_contents and oven_timer >= 4)) and NONE in self.item and not partnerChef.is_around(OVEN):
+        if (ingr in oven_contents or (
+                result in oven_contents and oven_timer >= 4)) and NONE in self.item and not partnerChef.is_around(OVEN):
             if process_comp_dish is not None:
                 return Action.use_coords(process_comp_dish.x, process_comp_dish.y)
             else:
-                return Action.use(OVEN)
+                return Action.use(DISH)
         else:
             return Action.use(OVEN)
 
@@ -214,17 +256,19 @@ class Customer:
 
         if TART in self.item or CROISSANT in self.item or CHOPPED_STRAWBERRIES in self.item:
             new_item = []
-            if TART in self.item:
-                self.item.remove(TART)
-                new_item.append(TART)
-            if CROISSANT in self.item:
-                self.item.remove(CROISSANT)
-                new_item.append(CROISSANT)
-            if CHOPPED_STRAWBERRIES in self.item:
-                self.item.remove(CHOPPED_STRAWBERRIES)
-                new_item.append(CHOPPED_STRAWBERRIES)
+            for ingr in [TART, CROISSANT, CHOPPED_STRAWBERRIES]:
+                if TART in self.item:
+                    self.item.remove(ingr)
+                    new_item.append(ingr)
+
             for it in self.item:
                 new_item.append(it)
+
+            for ingr in [CHOPPED_STRAWBERRIES, CROISSANT, TART]:
+                if ingr in new_item and TableItem.has_item(ingr):
+                    new_item.remove(ingr)
+                    new_item.insert(0, ingr)
+
             self.item = new_item
 
     @staticmethod
@@ -250,11 +294,20 @@ class Customer:
             nb_items = len(cus.item) - 1  # -1 pour le DISH
 
             if TART in cus.item:
-                action_weight += 8
+                if TableItem.has_item(TART):
+                    action_weight += 2
+                else:
+                    action_weight += 8
             if CROISSANT in cus.item:
-                action_weight += 6
-            if CHOPPED_STRAWBERRIES in cus.item:
-                action_weight += 3
+                if TableItem.has_item(CROISSANT):
+                    action_weight += 2
+                else:
+                    action_weight += 6
+            if CHOPPED_STRAWBERRIES in cus.item and not TableItem.has_item(CHOPPED_STRAWBERRIES):
+                if TableItem.has_item(CHOPPED_STRAWBERRIES):
+                    action_weight += 2
+                else:
+                    action_weight += 3
             if ICE_CREAM in cus.item:
                 action_weight += 1
             if BLUEBERRIES in cus.item:
@@ -265,7 +318,12 @@ class Customer:
 
             # SELECTION DU MEILLEUR
 
-            if turns_remaining < 100:
+            # print_debug("Command : " + str(cus.item))
+            # print_debug("Award : " + str(relative_award))
+            # print_debug("Weight : " + str(action_weight))
+            # print_debug(# =======")
+
+            if turns_remaining < 80:
                 if action_weight < nb_actions:
                     nb_actions = action_weight
                     best_item = cus.item
@@ -323,29 +381,43 @@ class TableItem:
         for it in TableItem.list:
             if DISH in it.item:
                 print_debug("GetAll : %s : comp=%s" % (
-                    " & ".join(it.item), str(TableItem.dish_is_compatible(it, myChef.target_command))))
+                    " & ".join(it.item), str(TableItem.dish_is_compatible(it.item, myChef.target_command))))
 
     @staticmethod
-    def dish_is_compatible(dish, items, except_item=None):
-        compatible = True
+    def dish_is_compatible(target_items, order_items, except_item=None):
+        if len(target_items) > len(order_items):
+            # print_debug("Too many items in target_items!")
+            return False
 
-        if DISH not in dish.item:
-            compatible = False
-        else:
-            if except_item is not None and except_item in dish.item:
-                compatible = False
-            else:
-                for it in dish.item:
-                    if it not in items:
-                        compatible = False
-        return compatible
+        if target_items is None:
+            # print_debug("Dish comp - target_items = None!")
+            return False
+
+        if order_items is None:
+            # print_debug("Dish comp - order_items = None!")
+            return False
+
+        if DISH not in target_items:
+            # print_debug("No dish in target_items!")
+            return False
+
+        if except_item is not None and except_item in target_items:
+            # print_debug("Except_item in target_items!")
+            return False
+
+        for it in target_items:
+            if it not in order_items:
+                # print_debug("%s in target not in order!" % it)
+                return False
+
+        return True
 
     @staticmethod
     def find_most_compatible_dish(items, except_item=None):
         nb_items = 0
         return_dish = None
         for it in TableItem.list:
-            if TableItem.dish_is_compatible(it, items, except_item):
+            if DISH in it.item and TableItem.dish_is_compatible(it.item, items, except_item):
                 if len(it.item) > nb_items:
                     nb_items = len(it.item)
                     return_dish = it
@@ -357,7 +429,7 @@ class TableItem:
 show_waiting = False
 show_table_items = False
 show_active_order = True
-show_oven = True
+show_oven = False
 
 num_all_customers = int(input())
 for i in range(num_all_customers):
@@ -375,7 +447,7 @@ Kitchen.show_map()
 
 myChef = Chef("My Chef", 99, 99, "")
 partnerChef = Chef("My Partner", 99, 99, "")
-can_steal = False
+old_action = ['', '']
 
 # game loop
 while True:
@@ -425,21 +497,26 @@ while True:
 
     myChef.show_items()
 
-    print_debug("waiting : " + str(myChef.waiting_bake))
-    print_debug("waiting : " + str(myChef.action_state))
     # ====== LOGIC ==============================
 
     next_action = "WAIT"
 
-    if not TableItem.dish_is_compatible(myChef, myChef.item):
-        myChef.target_command = None
-        for ord in Customer.waiting_list:
-            truc = TableItem.find_most_compatible_dish(ord.item)
-            if truc is not None:
-                myChef.target_command = ord.item
-                # print_debug("%d %d" % (truc.x, truc.y))
-        if myChef.target_command is None:
-            myChef.target_command = Customer.get_best_order_item()
+    if myChef.action_state is None:
+        if myChef.target_command is not None:
+            my_order_still_available = False
+            for ord in Customer.waiting_list:
+                # print_debug(myChef.target_command)
+                # print_debug(ord.item)
+                # print_debug(TableItem.dish_is_compatible(myChef.target_command, ord.item))
+                if TableItem.dish_is_compatible(myChef.target_command, ord.item):
+                    myChef.target_command = ord.item
+                    my_order_still_available = True
+
+            if not my_order_still_available:
+                myChef.target_command = None
+
+            if myChef.target_command is None:
+                myChef.target_command = Customer.get_best_order_item()
 
     if show_active_order:
         print_err("My Active Order: %s" % ("-".join(myChef.target_command)))
@@ -448,30 +525,22 @@ while True:
 
         comp_dish = TableItem.find_most_compatible_dish(myChef.target_command)
         can_drop = myChef.drop_dish()
-        # print_debug("My Dish comp? %s" % str(TableItem.dish_is_compatible(myChef, myChef.target_command)))
+        # print_debug("My Dish comp? %s" % str(TableItem.dish_is_compatible(myChef.item, myChef.target_command)))
 
         if myChef.action_state is None:
             # print_err("Action : NONE")
 
-            '''if NONE in myChef.item:
-                # print_debug("Part None")
-
-                if comp_dish is not None:
-                    next_action = Action.use_coords(comp_dish.x, comp_dish.y)
-                else:
-                    print_debug("Test1")
-                    next_action = Action.use(DISH)'''
-            if comp_dish is not None:
-
+            if DISH not in myChef.item and comp_dish is not None and len(myChef.item) < len(comp_dish.item):
+                print_err("Found comp dish! :)")
                 next_action = Action.use_coords(comp_dish.x, comp_dish.y)
 
-            elif NONE not in myChef.item and not TableItem.dish_is_compatible(myChef,
+            elif NONE not in myChef.item and not TableItem.dish_is_compatible(myChef.item,
                                                                               myChef.target_command) and can_drop:
                 print_err("Action : Not compatible! Dropping dish...")
                 next_action = can_drop
 
             elif DISH in myChef.item and comp_dish is not None and len(comp_dish.item) > len(myChef.item):
-                print_debug("Part Compatible dish")
+                print_err("Part Compatible dish")
                 if can_drop is not None:
                     next_action = can_drop
             else:
@@ -482,6 +551,7 @@ while True:
                     # print_debug("Order : " + order_part)
 
                     if order_part not in myChef.item:
+                        # print_debug("Go! : " + order_part)
 
                         if order_part not in processed_foods:
 
@@ -505,9 +575,10 @@ while True:
                             else:
                                 # ============ PROCESS =========================
                                 myChef.action_state = "process_" + order_part
+                                break
                                 # ==============================================
         else:
-            print_err("Action : %s!" % myChef.action_state)
+            # print_err("Action : %s!" % myChef.action_state)
 
             if myChef.action_state == "process_" + TART:
                 # ================ PROCESSING TART ==================
@@ -519,32 +590,38 @@ while True:
                     next_action = Action.use(CHOPPING_BOARD)
                 elif CHOPPED_DOUGH in myChef.item:
                     next_action = Action.use(BLUEBERRIES)
-                elif (RAW_TART in myChef.item or RAW_TART in oven_contents or TART in oven_contents) and TART not in myChef.item:
+                elif (
+                        RAW_TART in myChef.item or RAW_TART in oven_contents or TART in oven_contents) and TART not in myChef.item:
                     if RAW_TART in myChef.item:
-                        if TART in oven_contents or (RAW_TART in oven_contents and oven_timer < 3 and not partnerChef.is_around(OVEN)):
+                        if TART in oven_contents or (
+                                RAW_TART in oven_contents and oven_timer < 3 and not partnerChef.is_around(OVEN)):
                             next_action = can_drop
                         else:
                             next_action = Action.use(OVEN)
                     else:
-                        next_action = myChef.bake_it(DOUGH, TART)
+                        next_action = myChef.bake_it(RAW_TART, TART)
                 elif TART in myChef.item:
                     myChef.waiting_bake = False
-                    if process_comp_dish is not None:
-                        next_action = Action.use_coords(process_comp_dish.x, process_comp_dish.y)
-                        if myChef.is_around_coords(process_comp_dish.x, process_comp_dish.y):
-                            myChef.action_state = None
+                    if DISH not in myChef.item:
+                        if process_comp_dish is not None:
+                            next_action = Action.use_coords(process_comp_dish.x, process_comp_dish.y)
+                            if myChef.is_around_coords(process_comp_dish.x, process_comp_dish.y):
+                                myChef.action_state = None
+                        else:
+                            next_action = Action.use(DISH)
+                            if myChef.is_around(DISH) != None:
+                                myChef.action_state = None
                     else:
-                        next_action = Action.use(DISH)
-                        if myChef.is_around(DISH) != None:
-                            myChef.action_state = None
+                        myChef.action_state = None
                 else:
-                    if TableItem.has_item(DOUGH):
-                        x, y = list(map(int, TableItem.get_item_coords(DOUGH)))
-                        if DISH not in TableItem.get_item_at_coords(x, y):
-                            next_action = Action.use_coords(x, y)
-                    else:
-                        next_action = Action.use(DOUGH)
-
+                    for ingr in [TART, RAW_TART, CHOPPED_DOUGH, DOUGH]:
+                        if TableItem.has_item(ingr):
+                            x, y = list(map(int, TableItem.get_item_coords(ingr)))
+                            if DISH not in TableItem.get_item_at_coords(x, y):
+                                next_action = Action.use_coords(x, y)
+                                break
+                        else:
+                            next_action = Action.use(DOUGH)
 
             elif myChef.action_state == "process_" + CROISSANT:
                 # ================ PROCESSING CROISSANT ==================
@@ -552,9 +629,11 @@ while True:
 
                 if DISH in myChef.item and CROISSANT not in myChef.item and can_drop is not None and not myChef.waiting_bake:
                     next_action = can_drop
-                elif (DOUGH in myChef.item or DOUGH in oven_contents or CROISSANT in oven_contents) and CROISSANT not in myChef.item:
+                elif (
+                        DOUGH in myChef.item or DOUGH in oven_contents or CROISSANT in oven_contents) and CROISSANT not in myChef.item:
                     if DOUGH in myChef.item:
-                        if CROISSANT in oven_contents or (DOUGH in oven_contents and oven_timer < 3 and not partnerChef.is_around(OVEN)):
+                        if CROISSANT in oven_contents or (
+                                DOUGH in oven_contents and oven_timer < 3 and not partnerChef.is_around(OVEN)):
                             next_action = can_drop
                         else:
                             next_action = Action.use(OVEN)
@@ -562,22 +641,26 @@ while True:
                         next_action = myChef.bake_it(DOUGH, CROISSANT)
                 elif CROISSANT in myChef.item:
                     myChef.waiting_bake = False
-                    if process_comp_dish is not None:
-                        next_action = Action.use_coords(process_comp_dish.x, process_comp_dish.y)
-                        if myChef.is_around_coords(process_comp_dish.x, process_comp_dish.y):
-                            myChef.action_state = None
+                    if DISH not in myChef.item:
+                        if process_comp_dish is not None:
+                            next_action = Action.use_coords(process_comp_dish.x, process_comp_dish.y)
+                            if myChef.is_around_coords(process_comp_dish.x, process_comp_dish.y):
+                                myChef.action_state = None
+                        else:
+                            next_action = Action.use(DISH)
+                            if myChef.is_around(DISH) != None:
+                                myChef.action_state = None
                     else:
-                        next_action = Action.use(DISH)
-                        if myChef.is_around(DISH) != None:
-                            myChef.action_state = None
-                        myChef.waiting_bake = False
+                        myChef.action_state = None
                 else:
-                    if TableItem.has_item(DOUGH):
-                        x, y = list(map(int, TableItem.get_item_coords(DOUGH)))
-                        if DISH not in TableItem.get_item_at_coords(x, y):
-                            next_action = Action.use_coords(x, y)
-                    else:
-                        next_action = Action.use(DOUGH)
+                    for ingr in [CROISSANT, DOUGH]:
+                        if TableItem.has_item(ingr):
+                            x, y = list(map(int, TableItem.get_item_coords(ingr)))
+                            if DISH not in TableItem.get_item_at_coords(x, y):
+                                next_action = Action.use_coords(x, y)
+                                break
+                        else:
+                            next_action = Action.use(DOUGH)
 
 
             elif myChef.action_state == "process_" + CHOPPED_STRAWBERRIES:
@@ -588,17 +671,24 @@ while True:
                     next_action = can_drop
                 elif STRAWBERRIES in myChef.item:
                     next_action = Action.use(CHOPPING_BOARD)
-                elif CHOPPED_STRAWBERRIES in myChef.item:
+                elif CHOPPED_STRAWBERRIES in myChef.item and DISH not in myChef.item:
                     if process_comp_dish is not None:
                         next_action = Action.use_coords(process_comp_dish.x, process_comp_dish.y)
                         if myChef.is_around_coords(process_comp_dish.x, process_comp_dish.y):
                             myChef.action_state = None
                     else:
                         next_action = Action.use(DISH)
-                        if myChef.is_around(DISH) != None:
+                        if myChef.is_around(DISH) is not None:
                             myChef.action_state = None
                 else:
-                    next_action = Action.use(STRAWBERRIES)
+                    for ingr in [CHOPPED_STRAWBERRIES, STRAWBERRIES]:
+                        if TableItem.has_item(ingr):
+                            x, y = list(map(int, TableItem.get_item_coords(ingr)))
+                            if DISH not in TableItem.get_item_at_coords(x, y):
+                                next_action = Action.use_coords(x, y)
+                                break
+                        else:
+                            next_action = Action.use(STRAWBERRIES)
 
             else:
                 next_action = "ERROR IN PROCESSING CHOICE"
@@ -607,4 +697,22 @@ while True:
         next_action = Action.use(WINDOW)
 
     # ========= ACTION ===========================
-    print(next_action)
+
+    if next_action in old_action:
+        myChef.repeated_cmds += 1
+    else:
+        old_action[0] = old_action[1]
+        old_action[1] = next_action
+        myChef.repeated_cmds = 0
+
+    print_debug(old_action)
+    print_debug(myChef.repeated_cmds)
+
+    if myChef.repeated_cmds >= 20:
+        print(old_action[0] + "; WTF is this loop...")
+    else:
+        print(next_action + "; %s" % insults[text_counter])
+
+    text_counter += 1
+    if text_counter > len(insults) - 1:
+        text_counter = 0
